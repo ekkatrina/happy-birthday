@@ -319,7 +319,7 @@ function initG1(){
     <div class="score-row">
       <div class="sc-block"><div class="sc-label">Очки</div><div class="sc-val" id="g1s">0</div></div>
       <div class="sc-block"><div class="sc-label">Жизни</div><div class="sc-val" id="g1l">❤️❤️❤️</div></div>
-      <div class="sc-block"><div class="sc-label">Время</div><div class="sc-val" id="g1t">30</div></div>
+      <div class="sc-block"><div class="sc-label">Время</div><div class="sc-val" id="g1t">60</div></div>
     </div>
     <div id="g1-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px"></div>
     <div id="g1-end" style="display:none" class="gover-box">
@@ -337,14 +337,9 @@ function initG1(){
     cell.addEventListener('touchstart',(e)=>{e.preventDefault();g1Tap(i);},{passive:false});
     grid.appendChild(cell);
   }
-  g1State={score:0,lives:3,time:30,active:new Array(9).fill(null),lock:false,level:1};
+  g1State={score:0,lives:3,time:60,active:new Array(9).fill(null),lock:false,level:1};
   clearG1();
-  g1PopInt=setInterval(()=>{
-    const interval=Math.max(320,850-g1State.level*100);
-    clearInterval(g1PopInt);
-    g1PopInt=setInterval(popG1,interval);
-    popG1();
-  },50);
+  g1PopInt=setInterval(popG1,900);
   g1Timer=setInterval(()=>{
     g1State.time--;
     const el=document.getElementById('g1t');
@@ -355,28 +350,67 @@ function initG1(){
 
 function popG1(){
   const s=g1State;
-  s.level=1+Math.floor(s.score/30);
-  const pops=Math.min(s.level,3);
+  // Level based on TIME elapsed (0-60s), not score — smoother ramp
+  const elapsed=60-s.time;
+  const level=Math.floor(elapsed/10); // level 0-6 over 60 seconds
+
+  // Adjust spawn interval: starts slow (1200ms), ends at 600ms
+  const targetIv=Math.max(600,1200-level*100);
+  if(s._targetIv!==targetIv){
+    s._targetIv=targetIv;
+    clearInterval(g1PopInt);
+    g1PopInt=setInterval(popG1,targetIv);
+  }
+
+  // Max 1 pop early on, up to 2 in last third
+  const pops=level>=4?2:1;
+
   for(let p=0;p<pops;p++){
     const empty=[...Array(9).keys()].filter(i=>!s.active[i]);
     if(!empty.length)break;
     const idx2=empty[Math.floor(Math.random()*empty.length)];
-    const isSafe=Math.random()<Math.max(0.08,0.25-s.level*0.04);
+
+    // Jimin chance: 25% at start, 12% at end
+    const isSafe=Math.random()<Math.max(0.12,0.25-level*0.02);
     const charKey=isSafe?G1_SAFE:G1_CHARS[Math.floor(Math.random()*G1_CHARS.length)];
     s.active[idx2]=charKey;
+
     const cell=document.getElementById('gc'+idx2);
     if(!cell)continue;
-    cell.innerHTML=`<img src="${IMGS[charKey]}" style="width:100%;height:100%;object-fit:cover;animation:popIn 0.15s ease" alt="">`;
+
+    // Show duration: enemies visible 2.2s→1.2s over time; Jimin always 2s
+    const showDur=isSafe
+      ?2000
+      :Math.max(1200,2200-level*170);
+
+    cell.style.position='relative';
+    cell.innerHTML=`<img src="${IMGS[charKey]}" style="width:100%;height:100%;object-fit:cover;border-radius:14px;animation:popIn 0.15s ease" alt="">
+      <div style="position:absolute;bottom:2px;left:0;right:0;height:3px;background:rgba(0,0,0,0.3);border-radius:2px">
+        <div style="height:100%;background:${isSafe?'#7c4dff':'#ff4444'};border-radius:2px;animation:timerBar ${showDur}ms linear forwards"></div>
+      </div>`;
+
     if(!document.querySelector('style[data-popin]')){
       const st=document.createElement('style');
-      st.textContent='@keyframes popIn{0%{transform:scale(0.5)}60%{transform:scale(1.08)}100%{transform:scale(1)}}';
+      st.textContent='@keyframes popIn{0%{transform:scale(0.5)}60%{transform:scale(1.08)}100%{transform:scale(1)}}@keyframes timerBar{0%{width:100%}100%{width:0%}}';
       st.setAttribute('data-popin','1');document.head.appendChild(st);
     }
-    const hideDelay=Math.max(600,1500-s.level*120);
+
     const ci=idx2,ck=charKey;
     setTimeout(()=>{
-      if(s.active[ci]===ck){s.active[ci]=null;const c=document.getElementById('gc'+ci);if(c)c.innerHTML='';}
-    },hideDelay);
+      if(s.active[ci]!==ck)return;
+      s.active[ci]=null;
+      const c=document.getElementById('gc'+ci);
+      if(c)c.innerHTML='';
+      // Penalty only for escaped enemy (not Jimin)
+      if(ck!==G1_SAFE){
+        s.lives=Math.max(0,s.lives-1);
+        const el=document.getElementById('g1l');
+        if(el)el.textContent='❤️'.repeat(s.lives);
+        const grid=document.getElementById('g1-grid');
+        if(grid){grid.style.outline='3px solid rgba(255,50,50,0.7)';setTimeout(()=>{if(grid)grid.style.outline='';},350);}
+        if(s.lives===0)endG1();
+      }
+    },showDur);
   }
 }
 
@@ -431,7 +465,7 @@ function initG2(){
   document.getElementById('g-desc').textContent='Двигай пальцем — уворачивайся от преград!';
   document.getElementById('game-body').innerHTML=`
     <div class="score-row">
-      <div class="sc-block"><div class="sc-label">Высота</div><div class="sc-val" id="g2h">0м</div></div>
+      <div class="sc-block"><div class="sc-label">Ступени</div><div class="sc-val" id="g2h">0</div></div>
       <div class="sc-block"><div class="sc-label">Жизни</div><div class="sc-val" id="g2l">❤️❤️❤️</div></div>
     </div>
     <canvas id="g2c" width="390" height="400" style="width:100%;border-radius:20px;touch-action:none;display:block"></canvas>
@@ -484,8 +518,8 @@ function startG2(wImg,mImg){
     s.obstacles.push({
       x:10+Math.random()*(G2W-t.w-20),y:-50,
       w:t.w,h:t.h,col:t.col,label:t.label,
-      vx:(Math.random()-0.5)*(1+s.height/400),
-      vy:2+Math.random()*2+s.height/500,
+      vx:(Math.random()-0.5)*(2+s.height/300),
+      vy:2.5+Math.random()*2+s.height/350,
     });
   }
 
@@ -526,7 +560,7 @@ function startG2(wImg,mImg){
     }
 
     // Height marker
-    const pct=Math.min(s.height/800,1);
+    const pct=Math.min(s.height/3000,1);
     ctx.fillStyle='rgba(255,180,220,0.15)';
     ctx.fillRect(G2W-8,0,8,G2H*(1-pct));
     ctx.fillStyle='rgba(255,100,180,0.6)';
@@ -536,11 +570,17 @@ function startG2(wImg,mImg){
     ctx.fillText(`${Math.round(s.height/8)}м`,G2W-12,G2H*(1-pct)-3);
 
     // Goal
-    if(pct>0.9){
+    if(pct>0.97){
       ctx.fillStyle='rgba(255,215,0,0.6)';
       ctx.fillRect(0,0,G2W,20);
       ctx.fillStyle='rgba(255,215,0,1)';ctx.font='bold 12px sans-serif';
       ctx.textAlign='center';ctx.fillText('🏮 ВЕРШИНА!',G2W/2,14);
+    }
+    // Difficulty warning
+    if(s.height>1500&&s.height%300<30){
+      ctx.fillStyle=`rgba(255,100,100,${0.5+Math.sin(s.height/5)*0.4})`;
+      ctx.font='bold 11px sans-serif';ctx.textAlign='center';
+      ctx.fillText('⚠️ БЫСТРЕЕ!',G2W/2,G2H/2);
     }
   }
 
@@ -553,12 +593,18 @@ function startG2(wImg,mImg){
     s.px+=(s.tx-s.px)*0.15;
     s.height+=1;
     const hEl=document.getElementById('g2h');
-    if(hEl)hEl.textContent=`${Math.round(s.height/8)}м`;
+    if(hEl)hEl.textContent=`${s.height} ст`;
 
     // Obstacles
     s.oTimer++;
-    const spawnRate=Math.max(18,50-Math.floor(s.height/150));
-    if(s.oTimer>spawnRate){spawnObs();s.oTimer=0;}
+    const progress=Math.min(s.height/3000,1);
+    // spawn multiple obstacles at once at high levels
+    const spawnRate=Math.max(10,50-Math.floor(s.height/80));
+    if(s.oTimer>spawnRate){
+      const batch=s.height>1500?3:s.height>800?2:1;
+      for(let b=0;b<batch;b++)spawnObs();
+      s.oTimer=0;
+    }
     s.obstacles.forEach(o=>{
       o.y+=o.vy;o.x+=o.vx;
       if(o.x<0||o.x>G2W-o.w)o.vx*=-1;
@@ -582,7 +628,7 @@ function startG2(wImg,mImg){
     if(mImg)ctx.drawImage(mImg,s.px+8,s.py-38,34,40);
     if(wImg)ctx.drawImage(wImg,s.px,s.py,s.pw,s.ph);
 
-    if(s.height>=800){endG2(true);return;}
+    if(s.height>=3000){endG2(true);return;}
     g2Anim=requestAnimationFrame(loop);
   }
   loop();
@@ -643,31 +689,40 @@ function startG3(wImg){
   function spawnStudent(){
     if(s.done)return;
     const elapsed=35-s.time;
-    const level=1+Math.floor(elapsed/8); // level up every 8 sec
-    const maxStudents=Math.min(6+level*2,14);
+    const level=1+Math.floor(elapsed/6); // level up every 6 sec
+    const maxStudents=Math.min(5+level*2,16);
     if(s.students.length>=maxStudents)return;
-    const flowerChance=Math.min(0.3+level*0.08,0.7); // more flower students over time
+    const flowerChance=Math.min(0.35+level*0.1,0.75);
     const hasFlower=Math.random()<flowerChance;
-    const speed=0.5+level*0.15;
+    const speed=0.5+level*0.2;
+    const now2=Date.now();
     const st={
       x:20+Math.random()*(G3W-80),y:20+Math.random()*(G3H-130),
       w:44,h:66,hasFlower,
       flower:FLOWER_LIST[Math.floor(Math.random()*FLOWER_LIST.length)],
       alive:true,hit:false,hitTimer:0,flash:0,
-      vx:(Math.random()-0.5)*speed,vy:(Math.random()-0.5)*speed,
+      vx:(Math.random()-0.5)*speed*2,vy:(Math.random()-0.5)*speed*2,
       skinTone:['#f5d5a5','#e8b890','#c8906a','#f0c4a0'][Math.floor(Math.random()*4)],
       clothColor:['#3a5a8a','#5a3a8a','#3a7a5a','#8a5a3a','#7a3a3a'][Math.floor(Math.random()*5)],
       hairColor:['#2a1a0a','#5a3a10','#1a1a3a','#0a2a0a'][Math.floor(Math.random()*4)],
-      spawnTime:Date.now(),
-      // innocent vanish after 2-3s, flower penalty after 3s
-      vanishAfter:hasFlower?null:(2000+Math.random()*1000),
-      penaltyAfter:hasFlower?3000:null,
-      penaltyDone:false,
+      spawnTime:now2,
+      // innocent: vanish faster at higher levels
+      vanishAfter:hasFlower?null:(Math.max(1200,2500-level*200)+Math.random()*500),
+      penaltyAfter:hasFlower?(Math.max(1800,3000-level*150)):null,
+      penaltyDone:false,fadeAlpha:1,warning:false,
     };
     s.students.push(st);
+    // Spawn extra student at high levels
+    if(level>=4&&Math.random()<0.4)s.students.push({...st,x:20+Math.random()*(G3W-80),y:20+Math.random()*(G3H-130),spawnTime:now2,vx:(Math.random()-0.5)*speed*2,vy:(Math.random()-0.5)*speed*2,hasFlower:Math.random()<flowerChance,penaltyDone:false,warning:false,fadeAlpha:1});
   }
   const spawnInterval=()=>Math.max(350,650-Math.max(0,35-s.time)*15);
-  const spawnInt=setInterval(()=>{spawnStudent();},500);
+  // Adaptive spawn interval: starts 600ms, drops to 250ms
+  let _spawnIv=600;
+  const spawnInt=setInterval(()=>{
+    const elapsed2=35-s.time;
+    _spawnIv=Math.max(220,600-elapsed2*12);
+    spawnStudent();
+  },300);
   s.spawnInt=spawnInt;
 
   // tap / click
